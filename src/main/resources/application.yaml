@@ -1,0 +1,66 @@
+server:
+  port: 8877
+  tomcat:
+    uri-encoding: UTF-8
+  servlet:
+    # 配置请求编码
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+spring:
+  application:
+    name: dahua-sdk-java-demo
+  lifecycle:
+    # 设置缓冲期，最大等待时间
+    timeout-per-shutdown-phase: 30s
+  main:
+    allow-bean-definition-overriding: false
+  servlet:
+    multipart:
+      # 允许多文件上传
+      enabled: true
+      # 上传单个文件的最大值
+      max-file-size: 10MB
+      # 上传的总文件最大值
+      max-request-size: 100MB
+########################################## logback日志配置 #####################################################
+logging:
+  # 使用的logback文件
+  config: classpath:logback/logback-spring.xml
+########################################## actuator服务监控 ##############################################
+management:
+  endpoint:
+    # 允许actuator关机
+    shutdown:
+      enabled: true
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+############################## 大华SDK配置 ##############################
+dahua-sdk:
+  windows64:
+    libraries:
+      - classpath:libs/win64/avnetsdk.dll
+      - classpath:libs/win64/dhconfigsdk.dll
+      - classpath:libs/win64/dhnetsdk.dll
+      - classpath:libs/win64/play.dll
+      - classpath:libs/win64/ImageAlg.dll
+      - classpath:libs/win64/Infra.dll
+      - classpath:libs/win64/IvsDrawer.dll
+      - classpath:libs/win64/StreamConvertor.dll
+      - classpath:libs/win64/libeay32.dll
+      - classpath:libs/win64/ssleay32.dll
+      - classpath:libs/win64/RenderEngine.dll
+  linux64:
+    libraries:
+      - classpath:libs/linux64/libcrypto.so
+      - classpath:libs/linux64/libssl.so
+      - classpath:libs/linux64/libavnetsdk.so
+      - classpath:libs/linux64/libdhconfigsdk.so
+      - classpath:libs/linux64/libdhnetsdk.so
+      - classpath:libs/linux64/libStreamConvertor.so
+      - classpath:libs/linux64/libImageAlg.so
