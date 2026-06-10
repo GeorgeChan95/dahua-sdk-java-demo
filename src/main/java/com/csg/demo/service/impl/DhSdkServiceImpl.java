@@ -2,10 +2,14 @@ package com.csg.demo.service.impl;
 
 import com.csg.demo.config.DahuaPlatform;
 import com.csg.demo.dahua.support.*;
+import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.service.DhSdkService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * @ClassName LinuxDhServiceImpl
@@ -96,6 +100,68 @@ public class DhSdkServiceImpl implements DhSdkService {
         return false;
     }
 
+    /**
+     * 查询云台预置点列表。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return 预置点列表；参数非法、平台不支持或 SDK 查询失败时返回空列表
+     */
+    @Override
+    public List<PtzPresetInfoDTO> listPresets(String ip, int port, String username, String password, int channelId) {
+        if (!isValidPresetListRequest(ip, port, username, password, channelId)) {
+            log.warn("\n大华预置点列表查询参数非法，ip: {}, port: {}, channelId: {}", ip, port, channelId);
+            return Collections.emptyList();
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session == null ? Collections.emptyList() : session.listPresets(channelId);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session == null ? Collections.emptyList() : session.listPresets(channelId);
+        }
+
+        log.warn("\n当前平台不支持大华预置点列表查询: {}", platformDetector.currentPlatformDescription());
+        return Collections.emptyList();
+    }
+
+    /**
+     * 切换到指定云台预置点。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param presetIndex 预置点编号，通常从 1 开始
+     * @return 是否切换成功
+     */
+    @Override
+    public boolean gotoPreset(String ip, int port, String username, String password, int channelId, int presetIndex) {
+        if (!isValidGotoPresetRequest(ip, port, username, password, channelId, presetIndex)) {
+            log.warn("\n大华预置点切换参数非法，ip: {}, port: {}, channelId: {}, presetIndex: {}",
+                    ip, port, channelId, presetIndex);
+            return false;
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session != null && session.gotoPreset(channelId, presetIndex);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session != null && session.gotoPreset(channelId, presetIndex);
+        }
+
+        log.warn("\n当前平台不支持大华预置点切换: {}", platformDetector.currentPlatformDescription());
+        return false;
+    }
+
     /** 校验云台控制请求参数。 */
     private boolean isValidRequest(String ip, int port, int channelId, int command,
                                    int param1, int param2, int param3) {
@@ -107,6 +173,41 @@ public class DhSdkServiceImpl implements DhSdkService {
                 && param1 >= 0
                 && param2 >= 0
                 && param3 >= 0;
+    }
+
+    /**
+     * 校验预置点列表查询参数。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return 参数是否合法
+     */
+    private boolean isValidPresetListRequest(String ip, int port, String username, String password, int channelId) {
+        return StringUtils.isNotBlank(ip)
+                && isValidPort(port)
+                && StringUtils.isNotBlank(username)
+                && StringUtils.isNotBlank(password)
+                && channelId >= 0;
+    }
+
+    /**
+     * 校验预置点切换参数。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param presetIndex 预置点编号，通常从 1 开始
+     * @return 参数是否合法
+     */
+    private boolean isValidGotoPresetRequest(String ip, int port, String username, String password,
+                                             int channelId, int presetIndex) {
+        return isValidPresetListRequest(ip, port, username, password, channelId)
+                && presetIndex > 0;
     }
 
     /** 校验端口是否在合法范围内（大华常用端口如 37777 超出 short 范围，故用 int）。 */

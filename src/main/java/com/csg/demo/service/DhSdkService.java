@@ -1,5 +1,9 @@
 package com.csg.demo.service;
 
+import com.csg.demo.dto.PtzPresetInfoDTO;
+
+import java.util.List;
+
 /**
  * @ClassName LinuxDhService
  * @Description 大华设备登录/注销服务接口，供 Controller 调用
@@ -42,4 +46,29 @@ public interface DhSdkService {
      */
     boolean control(String ip, int port, String username, String password, int channelId, int command,
                     int param1, int param2, int param3, boolean stop);
+
+    /**
+     * 查询云台预置点列表。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return 预置点列表；失败时返回空列表
+     */
+    List<PtzPresetInfoDTO> listPresets(String ip, int port, String username, String password, int channelId);
+
+    /**
+     * 切换到指定云台预置点。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param presetIndex 预置点编号，通常从 1 开始
+     * @return 是否切换成功
+     */
+    boolean gotoPreset(String ip, int port, String username, String password, int channelId, int presetIndex);
 }

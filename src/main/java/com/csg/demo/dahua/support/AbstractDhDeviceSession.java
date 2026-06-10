@@ -1,12 +1,16 @@
 package com.csg.demo.dahua.support;
 
 import com.csg.demo.dahua.lib.NetSDKLib;
+import com.csg.demo.dahua.lib.ToolKits;
+import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.sun.jna.Memory;
 import com.sun.jna.ptr.IntByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 大华设备会话基础实现，封装跨平台一致的 SDK 登录、注销、在线检测逻辑。
@@ -15,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 abstract class AbstractDhDeviceSession {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractDhDeviceSession.class);
     private static final int QUERY_TIMEOUT_MS = 3000; // 超时3秒
+    private static final int MAX_PRESET_COUNT = 256; // 预置点列表最大读取数量
     private static final NetSDKLib NET_SDK = NetSDKLib.NETSDK_INSTANCE;
 
     private final String platformName;
@@ -132,6 +137,66 @@ abstract class AbstractDhDeviceSession {
         return success;
     }
 
+    /**
+     * 查询当前通道的云台预置点列表。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @return 预置点列表；未登录或查询失败时返回空列表
+     */
+    public synchronized List<PtzPresetInfoDTO> listPresets(int channelId) {
+        List<PtzPresetInfoDTO> presets = new ArrayList<>();
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法查询预置点列表，device: {}", platformName, getSessionKey());
+            return presets;
+        }
+
+        NetSDKLib.NET_PTZ_PRESET[] presetArray = createPresetArray();
+        NetSDKLib.NET_PTZ_PRESET_LIST presetList = new NetSDKLib.NET_PTZ_PRESET_LIST();
+        presetList.dwMaxPresetNum = MAX_PRESET_COUNT;
+        presetList.pstuPtzPorsetList = new Memory((long) presetArray[0].size() * MAX_PRESET_COUNT);
+        ToolKits.SetStructArrToPointerData(presetArray, presetList.pstuPtzPorsetList);
+        presetList.write();
+
+        boolean success = NET_SDK.CLIENT_QueryRemotDevState(loginHandle, NetSDKLib.NET_DEVSTATE_PTZ_PRESET_LIST,
+                channelId, presetList.getPointer(), presetList.size(), new IntByReference(0), QUERY_TIMEOUT_MS);
+        if (!success) {
+            LOGGER.warn("\n{} 查询大华设备预置点列表失败，device: {}, channelId: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return presets;
+        }
+
+        presetList.read();
+        ToolKits.GetPointerDataToStructArr(presetList.pstuPtzPorsetList, presetArray);
+        int retCount = Math.min(presetList.dwRetPresetNum, MAX_PRESET_COUNT);
+        for (int i = 0; i < retCount; i++) {
+            presets.add(toPresetInfo(presetArray[i]));
+        }
+        return presets;
+    }
+
+    /**
+     * 切换到指定云台预置点。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @param presetIndex 预置点编号，通常从 1 开始
+     * @return 是否切换成功
+     */
+    public synchronized boolean gotoPreset(int channelId, int presetIndex) {
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法切换预置点，device: {}", platformName, getSessionKey());
+            return false;
+        }
+
+        boolean success = NET_SDK.CLIENT_DHPTZControlEx(loginHandle, channelId,
+                NetSDKLib.NET_PTZ_ControlType.NET_PTZ_POINT_MOVE_CONTROL, 0, presetIndex, 0, 0);
+        if (!success) {
+            LOGGER.warn("\n{} 大华设备切换预置点失败，device: {}, channelId: {}, presetIndex: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, presetIndex,
+                    Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+        }
+        return success;
+    }
+
     /** 会话标识，格式为 ip:port，用于日志和缓存定位。 */
     public String getSessionKey() {
         return ip + ":" + port;
@@ -145,6 +210,60 @@ abstract class AbstractDhDeviceSession {
     /** 返回当前登录句柄值，主要用于日志或后续业务排查。 */
     public long getLoginHandle() {
         return loginHandle != null ? loginHandle.longValue() : 0;
+    }
+
+    /**
+     * 创建预置点结构数组，用于接收 SDK 返回的列表数据。
+     *
+     * @return 已初始化的预置点结构数组
+     */
+    private NetSDKLib.NET_PTZ_PRESET[] createPresetArray() {
+        NetSDKLib.NET_PTZ_PRESET[] presetArray = new NetSDKLib.NET_PTZ_PRESET[MAX_PRESET_COUNT];
+        for (int i = 0; i < presetArray.length; i++) {
+            presetArray[i] = new NetSDKLib.NET_PTZ_PRESET();
+        }
+        return presetArray;
+    }
+
+    /**
+     * 将 SDK 预置点结构转换为接口返回对象。
+     *
+     * @param preset SDK 返回的预置点结构
+     * @return 预置点返回对象
+     */
+    private PtzPresetInfoDTO toPresetInfo(NetSDKLib.NET_PTZ_PRESET preset) {
+        PtzPresetInfoDTO dto = new PtzPresetInfoDTO();
+        dto.setIndex(preset.nIndex);
+        dto.setName(resolvePresetName(preset));
+        dto.setHorizontal(preset.nPosition[0]);
+        dto.setVertical(preset.nPosition[1]);
+        dto.setZoom(preset.nPosition[2]);
+        return dto;
+    }
+
+    /**
+     * 获取预置点名称，优先使用扩展名称字段。
+     *
+     * @param preset SDK 返回的预置点结构
+     * @return 去除结尾空字符后的预置点名称
+     */
+    private String resolvePresetName(NetSDKLib.NET_PTZ_PRESET preset) {
+        String nameEx = decodeSdkString(preset.szNameEx);
+        return nameEx.isEmpty() ? decodeSdkString(preset.szName) : nameEx;
+    }
+
+    /**
+     * 解析 SDK 字节数组字符串，遇到 C 字符串结束符 0 即停止。
+     *
+     * @param bytes SDK 返回的固定长度字节数组
+     * @return UTF-8 解码后的字符串
+     */
+    private static String decodeSdkString(byte[] bytes) {
+        int length = 0;
+        while (length < bytes.length && bytes[length] != 0) {
+            length++;
+        }
+        return new String(bytes, 0, length, StandardCharsets.UTF_8).trim();
     }
 
     /** 将字符串写入 SDK 固定长度字节数组，预留末尾 1 字节作为 C 字符串结束符。 */
