@@ -3,12 +3,16 @@ package com.csg.demo.dahua.support;
 import com.csg.demo.dahua.lib.NetSDKLib;
 import com.csg.demo.dahua.lib.ToolKits;
 import com.csg.demo.dto.PtzPresetInfoDTO;
+import com.csg.demo.dto.RecordDownloadTaskDTO;
+import com.csg.demo.dto.RecordFileInfoDTO;
 import com.sun.jna.Memory;
 import com.sun.jna.ptr.IntByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -22,6 +26,7 @@ import java.util.concurrent.TimeoutException;
 abstract class AbstractDhDeviceSession {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractDhDeviceSession.class);
     private static final int QUERY_TIMEOUT_MS = 3000; // 超时3秒
+    private static final int RECORD_QUERY_TIMEOUT_MS = 5000; // 录像查询超时5秒
     private static final int SNAP_TIMEOUT_SECONDS = 5; // 抓图回调等待超时5秒
     private static final int MAX_PRESET_COUNT = 256; // 预置点列表最大读取数量
     private static final byte[] EMPTY_PICTURE = new byte[0];
@@ -189,6 +194,67 @@ abstract class AbstractDhDeviceSession {
     }
 
     /**
+     * 查询指定时间段内的录像文件列表。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 查询开始时间
+     * @param endTime 查询结束时间
+     * @param maxCount 最大返回条数
+     * @return 录像文件列表；未登录或查询失败时返回空列表
+     */
+    public synchronized List<RecordFileInfoDTO> listRecordFiles(int channelId, LocalDateTime startTime,
+                                                                LocalDateTime endTime, int maxCount) {
+        List<RecordFileInfoDTO> records = new ArrayList<>();
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法查询录像文件，device: {}", platformName, getSessionKey());
+            return records;
+        }
+
+        NetSDKLib.NET_RECORDFILE_INFO[] recordArray = createRecordFileArray(maxCount);
+        IntByReference fileCount = new IntByReference(0);
+        boolean success = NET_SDK.CLIENT_QueryRecordFile(loginHandle, channelId,
+                NetSDKLib.EM_QUERY_RECORD_TYPE.EM_RECORD_TYPE_ALL, toNetTime(startTime), toNetTime(endTime),
+                null, recordArray, recordArray.length * recordArray[0].size(), fileCount,
+                RECORD_QUERY_TIMEOUT_MS, false);
+        if (!success) {
+            LOGGER.warn("\n{} 查询大华设备录像文件失败，device: {}, channelId: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return records;
+        }
+
+        int retCount = Math.min(fileCount.getValue(), recordArray.length);
+        for (int i = 0; i < retCount; i++) {
+            records.add(toRecordFileInfo(recordArray[i]));
+        }
+        return records;
+    }
+
+    /**
+     * 异步下载指定时间段内的录像文件。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 下载开始时间
+     * @param endTime 下载结束时间
+     * @param recordFileType 录像类型，0 表示所有录像
+     * @param fileName 本地保存文件名，可为空
+     * @return 下载任务状态；未登录时返回 null
+     */
+    public synchronized RecordDownloadTaskDTO downloadRecordFileAsync(int channelId, LocalDateTime startTime,
+                                                                      LocalDateTime endTime, int recordFileType,
+                                                                      String fileName) {
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法下载录像文件，device: {}", platformName, getSessionKey());
+            return null;
+        }
+
+        String filePath = buildRecordFilePath(channelId, startTime, endTime, fileName);
+        RecordDownloadTaskRegistry.RecordDownloadTask task = RecordDownloadTaskRegistry.createTask(filePath);
+        RecordDownloadTaskRegistry.schedule(task,
+                () -> startDownloadRecordFile(task, channelId, startTime, endTime, recordFileType));
+        return task.toDTO();
+    }
+
+    /**
      * 查询当前通道的云台预置点列表。
      *
      * @param channelId 通道号，从 0 开始
@@ -277,6 +343,94 @@ abstract class AbstractDhDeviceSession {
     }
 
     /**
+     * 启动 SDK 录像下载任务。
+     *
+     * @param task 下载任务
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 下载开始时间
+     * @param endTime 下载结束时间
+     * @param recordFileType 录像类型
+     */
+    private synchronized void startDownloadRecordFile(RecordDownloadTaskRegistry.RecordDownloadTask task,
+                                                      int channelId, LocalDateTime startTime,
+                                                      LocalDateTime endTime, int recordFileType) {
+        if (!isLoggedIn()) {
+            task.fail("设备未登录");
+            return;
+        }
+
+        File file = new File(task.getFilePath());
+        File parent = file.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            task.fail("创建录像下载目录失败: " + parent.getAbsolutePath());
+            return;
+        }
+
+        NetSDKLib.NET_IN_DOWNLOAD_BY_DATA_TYPE inParam = new NetSDKLib.NET_IN_DOWNLOAD_BY_DATA_TYPE();
+        inParam.nChannelID = channelId;
+        inParam.emRecordType = recordFileType;
+        inParam.stStartTime = toNetTime(startTime);
+        inParam.stStopTime = toNetTime(endTime);
+        inParam.szSavedFileName = task.getFilePath();
+        inParam.cbDownLoadPos = task.getCallback();
+        inParam.dwPosUser = null;
+        inParam.fDownLoadDataCallBack = null;
+        inParam.dwDataUser = null;
+        inParam.emDataType = NetSDKLib.EM_REAL_DATA_TYPE.EM_REAL_DATA_TYPE_MP4;
+
+        NetSDKLib.NET_OUT_DOWNLOAD_BY_DATA_TYPE outParam = new NetSDKLib.NET_OUT_DOWNLOAD_BY_DATA_TYPE();
+        inParam.write();
+        outParam.write();
+        NetSDKLib.LLong downloadHandle = NET_SDK.CLIENT_DownloadByDataType(loginHandle,
+                inParam.getPointer(), outParam.getPointer(), RECORD_QUERY_TIMEOUT_MS);
+        if (downloadHandle.longValue() == 0) {
+            String error = "MP4录像下载启动失败，错误码: 0x" + Integer.toHexString(NET_SDK.CLIENT_GetLastError());
+            LOGGER.warn("\n{} {}, device: {}, channelId: {}, file: {}",
+                    platformName, error, getSessionKey(), channelId, task.getFilePath());
+            task.fail(error);
+            return;
+        }
+
+        task.start(downloadHandle);
+        LOGGER.info("\n{} 大华设备MP4录像下载已启动，device: {}, channelId: {}, taskId: {}, file: {}",
+                platformName, getSessionKey(), channelId, task.getTaskId(), task.getFilePath());
+    }
+
+    /**
+     * 创建录像文件结构数组。
+     *
+     * @param maxCount 最大返回条数
+     * @return 已初始化的录像文件结构数组
+     */
+    private NetSDKLib.NET_RECORDFILE_INFO[] createRecordFileArray(int maxCount) {
+        NetSDKLib.NET_RECORDFILE_INFO[] recordArray = new NetSDKLib.NET_RECORDFILE_INFO[maxCount];
+        for (int i = 0; i < recordArray.length; i++) {
+            recordArray[i] = new NetSDKLib.NET_RECORDFILE_INFO();
+        }
+        return recordArray;
+    }
+
+    /**
+     * 将 SDK 录像文件结构转换为接口返回对象。
+     *
+     * @param record SDK 返回的录像文件结构
+     * @return 录像文件信息
+     */
+    private RecordFileInfoDTO toRecordFileInfo(NetSDKLib.NET_RECORDFILE_INFO record) {
+        RecordFileInfoDTO dto = new RecordFileInfoDTO();
+        dto.setChannelId(record.ch);
+        dto.setFileName(decodeSdkString(record.filename));
+        dto.setFileSize(record.size);
+        dto.setFrameCount(record.framenum);
+        dto.setRecordFileType(record.nRecordFileType & 0xFF);
+        dto.setStreamType(record.bRecType & 0xFF);
+        dto.setImportant(record.bImportantRecID != 0);
+        dto.setStartTime(toDateTimeString(record.starttime));
+        dto.setEndTime(toDateTimeString(record.endtime));
+        return dto;
+    }
+
+    /**
      * 将 SDK 预置点结构转换为接口返回对象。
      *
      * @param preset SDK 返回的预置点结构
@@ -315,6 +469,62 @@ abstract class AbstractDhDeviceSession {
             length++;
         }
         return new String(bytes, 0, length, StandardCharsets.UTF_8).trim();
+    }
+
+    /**
+     * 将 Java 时间转换为 SDK 时间结构。
+     *
+     * @param dateTime Java 时间
+     * @return SDK 时间结构
+     */
+    private static NetSDKLib.NET_TIME toNetTime(LocalDateTime dateTime) {
+        NetSDKLib.NET_TIME netTime = new NetSDKLib.NET_TIME();
+        netTime.setTime(dateTime.getYear(), dateTime.getMonthValue(), dateTime.getDayOfMonth(),
+                dateTime.getHour(), dateTime.getMinute(), dateTime.getSecond());
+        return netTime;
+    }
+
+    /**
+     * 将 SDK 时间结构格式化为接口时间字符串。
+     *
+     * @param netTime SDK 时间结构
+     * @return yyyy-MM-dd HH:mm:ss 格式时间
+     */
+    private static String toDateTimeString(NetSDKLib.NET_TIME netTime) {
+        return String.format("%04d-%02d-%02d %02d:%02d:%02d",
+                netTime.dwYear, netTime.dwMonth, netTime.dwDay,
+                netTime.dwHour, netTime.dwMinute, netTime.dwSecond);
+    }
+
+    /**
+     * 构造录像下载文件路径。
+     *
+     * @param channelId 通道号
+     * @param startTime 下载开始时间
+     * @param endTime 下载结束时间
+     * @param fileName 用户指定文件名
+     * @return 本地录像文件绝对路径
+     */
+    private String buildRecordFilePath(int channelId, LocalDateTime startTime, LocalDateTime endTime, String fileName) {
+        String safeFileName = isBlank(fileName)
+                ? String.format("%s_%d_ch%d_%s_%s.mp4", ip.replace('.', '_'), port, channelId,
+                compactTime(startTime), compactTime(endTime))
+                : fileName.trim();
+        safeFileName = safeFileName.replaceAll("[\\\\/:*?\"<>|]", "_");
+        if (!safeFileName.toLowerCase().endsWith(".mp4")) {
+            safeFileName = safeFileName + ".mp4";
+        }
+        return new File("./record/", safeFileName).getAbsolutePath();
+    }
+
+    private static String compactTime(LocalDateTime dateTime) {
+        return String.format("%04d%02d%02d%02d%02d%02d",
+                dateTime.getYear(), dateTime.getMonthValue(), dateTime.getDayOfMonth(),
+                dateTime.getHour(), dateTime.getMinute(), dateTime.getSecond());
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     /** 将字符串写入 SDK 固定长度字节数组，预留末尾 1 字节作为 C 字符串结束符。 */

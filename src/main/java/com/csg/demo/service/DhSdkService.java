@@ -1,6 +1,8 @@
 package com.csg.demo.service;
 
 import com.csg.demo.dto.PtzPresetInfoDTO;
+import com.csg.demo.dto.RecordDownloadTaskDTO;
+import com.csg.demo.dto.RecordFileInfoDTO;
 
 import java.util.List;
 
@@ -58,6 +60,48 @@ public interface DhSdkService {
      * @return JPEG 图片字节；失败时返回空数组
      */
     byte[] capturePicture(String ip, int port, String username, String password, int channelId);
+
+    /**
+     * 查询指定时间段内的录像文件列表。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 查询开始时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param endTime 查询结束时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param maxCount 最大返回条数
+     * @return 录像文件列表；失败时返回空列表
+     */
+    List<RecordFileInfoDTO> listRecordFiles(String ip, int port, String username, String password,
+                                            int channelId, String startTime, String endTime, int maxCount);
+
+    /**
+     * 异步下载指定时间段内的录像文件。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 下载开始时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param endTime 下载结束时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param recordFileType 录像类型，0 表示所有录像
+     * @param fileName 本地保存文件名，可为空
+     * @return 下载任务状态；失败时返回 null
+     */
+    RecordDownloadTaskDTO downloadRecordFile(String ip, int port, String username, String password,
+                                             int channelId, String startTime, String endTime,
+                                             int recordFileType, String fileName);
+
+    /**
+     * 查询录像下载任务状态。
+     *
+     * @param taskId 下载任务 ID
+     * @return 下载任务状态；不存在时返回 null
+     */
+    RecordDownloadTaskDTO getRecordDownloadTask(String taskId);
 
     /**
      * 查询云台预置点列表。

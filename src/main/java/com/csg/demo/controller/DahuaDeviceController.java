@@ -4,12 +4,17 @@ import com.csg.demo.dto.CapturePictureRequestDTO;
 import com.csg.demo.dto.PtzControlRequestDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.PtzPresetRequestDTO;
+import com.csg.demo.dto.RecordDownloadRequestDTO;
+import com.csg.demo.dto.RecordDownloadTaskDTO;
+import com.csg.demo.dto.RecordFileInfoDTO;
+import com.csg.demo.dto.RecordFileQueryRequestDTO;
 import com.csg.demo.service.DhSdkService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -64,6 +69,51 @@ public class DahuaDeviceController {
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
                 .body(pictureBytes);
+    }
+
+    /**
+     * 查询指定时间段内的录像文件列表。
+     *
+     * @param request 录像文件查询请求参数
+     * @return 录像文件列表
+     */
+    @PostMapping("/record/list")
+    public List<RecordFileInfoDTO> listRecordFiles(@RequestBody RecordFileQueryRequestDTO request) {
+        return dhSdkService.listRecordFiles(request.getIp(), request.getPort(), request.getUsername(),
+                request.getPassword(), request.getChannelId(), request.getStartTime(), request.getEndTime(),
+                request.getMaxCount());
+    }
+
+    /**
+     * 异步下载指定时间段内的录像文件。
+     *
+     * @param request 录像下载请求参数
+     * @return 下载任务状态
+     */
+    @PostMapping("/record/download")
+    public ResponseEntity<RecordDownloadTaskDTO> downloadRecordFile(@RequestBody RecordDownloadRequestDTO request) {
+        RecordDownloadTaskDTO task = dhSdkService.downloadRecordFile(request.getIp(), request.getPort(),
+                request.getUsername(), request.getPassword(), request.getChannelId(), request.getStartTime(),
+                request.getEndTime(), request.getRecordFileType(), request.getFileName());
+        if (task == null) {
+            return ResponseEntity.status(500).build();
+        }
+        return ResponseEntity.ok(task);
+    }
+
+    /**
+     * 查询录像下载任务状态。
+     *
+     * @param taskId 下载任务 ID
+     * @return 下载任务状态
+     */
+    @PostMapping("/record/download/status")
+    public ResponseEntity<RecordDownloadTaskDTO> getRecordDownloadTask(@RequestParam String taskId) {
+        RecordDownloadTaskDTO task = dhSdkService.getRecordDownloadTask(taskId);
+        if (task == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(task);
     }
 
     /**

@@ -4,6 +4,8 @@ import com.csg.demo.config.DahuaPlatform;
 import com.csg.demo.dahua.lib.ToolKits;
 import com.csg.demo.dahua.support.*;
 import com.csg.demo.dto.PtzPresetInfoDTO;
+import com.csg.demo.dto.RecordDownloadTaskDTO;
+import com.csg.demo.dto.RecordFileInfoDTO;
 import com.csg.demo.service.DhSdkService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -11,6 +13,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,6 +31,11 @@ import java.util.List;
 public class DhSdkServiceImpl implements DhSdkService {
 
     private static final byte[] EMPTY_BYTES = new byte[0];
+    private static final int DEFAULT_RECORD_MAX_COUNT = 100;
+    private static final int MAX_RECORD_COUNT = 200;
+    private static final int MAX_RECORD_HOURS = 6;
+    private static final DateTimeFormatter DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final PlatformDetector platformDetector;
     private final LinuxDeviceSessionManager linuxSessionManager;
@@ -140,6 +151,98 @@ public class DhSdkServiceImpl implements DhSdkService {
             saveCapturePicture(pictureBytes, ip, port, channelId);
         }
         return pictureBytes;
+    }
+
+    /**
+     * 查询指定时间段内的录像文件列表。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 查询开始时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param endTime 查询结束时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param maxCount 最大返回条数
+     * @return 录像文件列表；参数非法、平台不支持或 SDK 查询失败时返回空列表
+     */
+    @Override
+    public List<RecordFileInfoDTO> listRecordFiles(String ip, int port, String username, String password,
+                                                   int channelId, String startTime, String endTime, int maxCount) {
+        LocalDateTime start = parseDateTime(startTime);
+        LocalDateTime end = parseDateTime(endTime);
+        if (!isValidRecordTimeRequest(ip, port, username, password, channelId, start, end)) {
+            log.warn("\n大华录像文件查询参数非法，ip: {}, port: {}, channelId: {}, startTime: {}, endTime: {}",
+                    ip, port, channelId, startTime, endTime);
+            return Collections.emptyList();
+        }
+
+        int limit = normalizeRecordMaxCount(maxCount);
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session == null ? Collections.emptyList() : session.listRecordFiles(channelId, start, end, limit);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session == null ? Collections.emptyList() : session.listRecordFiles(channelId, start, end, limit);
+        }
+
+        log.warn("\n当前平台不支持大华录像文件查询: {}", platformDetector.currentPlatformDescription());
+        return Collections.emptyList();
+    }
+
+    /**
+     * 异步下载指定时间段内的录像文件。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 下载开始时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param endTime 下载结束时间，格式：yyyy-MM-dd HH:mm:ss
+     * @param recordFileType 录像类型，0 表示所有录像
+     * @param fileName 本地保存文件名，可为空
+     * @return 下载任务状态；参数非法、平台不支持或 SDK 启动失败时返回 null
+     */
+    @Override
+    public RecordDownloadTaskDTO downloadRecordFile(String ip, int port, String username, String password,
+                                                    int channelId, String startTime, String endTime,
+                                                    int recordFileType, String fileName) {
+        LocalDateTime start = parseDateTime(startTime);
+        LocalDateTime end = parseDateTime(endTime);
+        if (!isValidRecordTimeRequest(ip, port, username, password, channelId, start, end)
+                || recordFileType < 0) {
+            log.warn("\n大华录像下载参数非法，ip: {}, port: {}, channelId: {}, startTime: {}, endTime: {}, type: {}",
+                    ip, port, channelId, startTime, endTime, recordFileType);
+            return null;
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session == null ? null : session.downloadRecordFileAsync(channelId, start, end, recordFileType, fileName);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session == null ? null : session.downloadRecordFileAsync(channelId, start, end, recordFileType, fileName);
+        }
+
+        log.warn("\n当前平台不支持大华录像下载: {}", platformDetector.currentPlatformDescription());
+        return null;
+    }
+
+    /**
+     * 查询录像下载任务状态。
+     *
+     * @param taskId 下载任务 ID
+     * @return 下载任务状态；不存在时返回 null
+     */
+    @Override
+    public RecordDownloadTaskDTO getRecordDownloadTask(String taskId) {
+        if (StringUtils.isBlank(taskId)) {
+            return null;
+        }
+        return RecordDownloadTaskRegistry.getTask(taskId);
     }
 
     /**
@@ -264,6 +367,57 @@ public class DhSdkServiceImpl implements DhSdkService {
      */
     private boolean isValidCapturePictureRequest(String ip, int port, String username, String password, int channelId) {
         return isValidPresetListRequest(ip, port, username, password, channelId);
+    }
+
+    /**
+     * 校验录像查询/下载请求参数。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @return 参数是否合法
+     */
+    private boolean isValidRecordTimeRequest(String ip, int port, String username, String password,
+                                             int channelId, LocalDateTime startTime, LocalDateTime endTime) {
+        return isValidPresetListRequest(ip, port, username, password, channelId)
+                && startTime != null
+                && endTime != null
+                && endTime.isAfter(startTime)
+                && Duration.between(startTime, endTime).compareTo(Duration.ofHours(MAX_RECORD_HOURS)) <= 0;
+    }
+
+    /**
+     * 解析接口时间字符串。
+     *
+     * @param value 时间字符串，格式：yyyy-MM-dd HH:mm:ss
+     * @return 解析后的时间；格式错误时返回 null
+     */
+    private LocalDateTime parseDateTime(String value) {
+        if (StringUtils.isBlank(value)) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value, DATE_TIME_FORMATTER);
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 规范化录像查询最大返回条数。
+     *
+     * @param maxCount 请求条数
+     * @return 限制后的条数
+     */
+    private int normalizeRecordMaxCount(int maxCount) {
+        if (maxCount <= 0) {
+            return DEFAULT_RECORD_MAX_COUNT;
+        }
+        return Math.min(maxCount, MAX_RECORD_COUNT);
     }
 
     /** 校验端口是否在合法范围内（大华常用端口如 37777 超出 short 范围，故用 int）。 */
