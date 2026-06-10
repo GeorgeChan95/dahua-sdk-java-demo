@@ -2,6 +2,7 @@ package com.csg.demo.dahua.lifecycle;
 
 import com.csg.demo.config.DahuaPlatform;
 import com.csg.demo.config.DahuaSdkProperties;
+import com.csg.demo.dahua.lib.ToolKits;
 import com.csg.demo.dahua.support.NativeLibraryExtractor;
 import com.csg.demo.dahua.support.PlatformDetector;
 import com.csg.demo.dahua.lib.LibraryLoad;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -43,6 +45,7 @@ public class DahuaSdkLifecycle implements SmartLifecycle {
     private NetSDKLib netSdk; // 大华 SDK 实例
     private Object disconnectCallback; // 断开连接回调,用于处理断开连接事件
     private Object reconnectCallback; // 重连回调,用于处理重连事件
+    private static boolean bLogopen = false;
 
     public DahuaSdkLifecycle(PlatformDetector platformDetector,
                              DahuaSdkProperties properties,
@@ -186,6 +189,23 @@ public class DahuaSdkLifecycle implements SmartLifecycle {
         boolean initSuccess = netSdk.CLIENT_Init(disconnect, null);
         if (!initSuccess) {
             throw new IllegalStateException(String.format("大华SDK初始化异常，错误码为: 0x%x", netSdk.CLIENT_GetLastError()));
+        }
+
+        //打开日志，可选
+        NetSDKLib.LOG_SET_PRINT_INFO setLog = new NetSDKLib.LOG_SET_PRINT_INFO();
+        File path = new File("./sdklog/");
+        if (!path.exists()) {
+            path.mkdir();
+        }
+        String logPath = path.getAbsoluteFile().getParent() + "\\sdklog\\" + ToolKits.getDate() + ".log";
+        setLog.nPrintStrategy = 0;
+        setLog.bSetFilePath = 1;
+        System.arraycopy(logPath.getBytes(), 0, setLog.szLogFilePath, 0, logPath.getBytes().length);
+        log.info("大华SDK日志路径为：{}", logPath);
+        setLog.bSetPrintStrategy = 1;
+        bLogopen = netSdk.CLIENT_LogOpen(setLog);
+        if(!bLogopen ) {
+            log.error("打开大华SDK日志操作失败");
         }
 
         // 设置重连回调
