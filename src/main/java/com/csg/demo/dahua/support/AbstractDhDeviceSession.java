@@ -11,6 +11,9 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 大华设备会话基础实现，封装跨平台一致的 SDK 登录、注销、在线检测逻辑。
@@ -19,7 +22,9 @@ import java.util.List;
 abstract class AbstractDhDeviceSession {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractDhDeviceSession.class);
     private static final int QUERY_TIMEOUT_MS = 3000; // 超时3秒
+    private static final int SNAP_TIMEOUT_SECONDS = 5; // 抓图回调等待超时5秒
     private static final int MAX_PRESET_COUNT = 256; // 预置点列表最大读取数量
+    private static final byte[] EMPTY_PICTURE = new byte[0];
     private static final NetSDKLib NET_SDK = NetSDKLib.NETSDK_INSTANCE;
 
     private final String platformName;
@@ -135,6 +140,52 @@ abstract class AbstractDhDeviceSession {
                     Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
         }
         return success;
+    }
+
+    /**
+     * 远程抓取当前通道的一张图片。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @return JPEG 图片字节；未登录、SDK 调用失败或等待超时时返回空数组
+     */
+    public synchronized byte[] capturePicture(int channelId) {
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法抓图，device: {}", platformName, getSessionKey());
+            return EMPTY_PICTURE;
+        }
+
+        SnapPictureCallbackRegistry.PendingSnapRequest request =
+                SnapPictureCallbackRegistry.register(loginHandle.longValue());
+        NetSDKLib.SNAP_PARAMS snapParams = new NetSDKLib.SNAP_PARAMS();
+        snapParams.Channel = channelId;
+        snapParams.Quality = 3; // 3表示画质，10%、30%、50%、60%、80%、100%
+        snapParams.mode = 0; // 请求一帧，远程抓图
+        snapParams.InterSnap = 0; // 0表示不定时抓图，1表示定时抓图，单位为秒
+        snapParams.CmdSerial = request.getCmdSerial();
+
+        boolean success = NET_SDK.CLIENT_SnapPictureEx(loginHandle, snapParams, new IntByReference(0));
+        if (!success) {
+            SnapPictureCallbackRegistry.remove(request);
+            LOGGER.warn("\n{} 大华设备抓图命令下发失败，device: {}, channelId: {}, cmdSerial: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, snapParams.CmdSerial,
+                    Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return EMPTY_PICTURE;
+        }
+
+        try {
+            return request.getFuture().get(SNAP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            SnapPictureCallbackRegistry.remove(request);
+            LOGGER.warn("\n{} 大华设备抓图等待被中断，device: {}, channelId: {}, cmdSerial: {}",
+                    platformName, getSessionKey(), channelId, snapParams.CmdSerial);
+            return EMPTY_PICTURE;
+        } catch (ExecutionException | TimeoutException ex) {
+            SnapPictureCallbackRegistry.remove(request);
+            LOGGER.warn("\n{} 大华设备抓图回调等待失败，device: {}, channelId: {}, cmdSerial: {}",
+                    platformName, getSessionKey(), channelId, snapParams.CmdSerial, ex);
+            return EMPTY_PICTURE;
+        }
     }
 
     /**

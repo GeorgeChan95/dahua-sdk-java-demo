@@ -48,6 +48,18 @@ public interface DhSdkService {
                     int param1, int param2, int param3, boolean stop);
 
     /**
+     * 远程抓取当前通道的一张图片。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return JPEG 图片字节；失败时返回空数组
+     */
+    byte[] capturePicture(String ip, int port, String username, String password, int channelId);
+
+    /**
      * 查询云台预置点列表。
      *
      * @param ip 设备 IP

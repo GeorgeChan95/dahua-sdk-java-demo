@@ -1,9 +1,12 @@
 package com.csg.demo.controller;
 
+import com.csg.demo.dto.CapturePictureRequestDTO;
 import com.csg.demo.dto.PtzControlRequestDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.PtzPresetRequestDTO;
 import com.csg.demo.service.DhSdkService;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,6 +46,24 @@ public class DahuaDeviceController {
     public boolean control(@RequestBody PtzControlRequestDTO request) {
         return dhSdkService.control(request.getIp(), request.getPort(), request.getUsername(), request.getPassword(), request.getChannelId(),
                 request.getCommand(), request.getParam1(), request.getParam2(), request.getParam3(), request.isStop());
+    }
+
+    /**
+     * 远程抓取当前通道图片，成功时直接返回 JPEG 字节。
+     *
+     * @param request 抓图请求参数，包含设备地址、登录凭据和通道号
+     * @return JPEG 图片字节
+     */
+    @PostMapping(value = "/capture", produces = MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> capturePicture(@RequestBody CapturePictureRequestDTO request) {
+        byte[] pictureBytes = dhSdkService.capturePicture(request.getIp(), request.getPort(), request.getUsername(),
+                request.getPassword(), request.getChannelId());
+        if (pictureBytes.length == 0) {
+            return ResponseEntity.status(500).build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(pictureBytes);
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.csg.demo.service.impl;
 
 import com.csg.demo.config.DahuaPlatform;
+import com.csg.demo.dahua.lib.ToolKits;
 import com.csg.demo.dahua.support.*;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.service.DhSdkService;
@@ -8,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
@@ -20,6 +23,8 @@ import java.util.List;
 @Slf4j
 @Service
 public class DhSdkServiceImpl implements DhSdkService {
+
+    private static final byte[] EMPTY_BYTES = new byte[0];
 
     private final PlatformDetector platformDetector;
     private final LinuxDeviceSessionManager linuxSessionManager;
@@ -98,6 +103,43 @@ public class DhSdkServiceImpl implements DhSdkService {
 
         log.warn("\n当前平台不支持大华云台控制: {}", platformDetector.currentPlatformDescription());
         return false;
+    }
+
+    /**
+     * 远程抓取当前通道的一张图片。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return JPEG 图片字节；参数非法、平台不支持或 SDK 抓图失败时返回空数组
+     */
+    @Override
+    public byte[] capturePicture(String ip, int port, String username, String password, int channelId) {
+        if (!isValidCapturePictureRequest(ip, port, username, password, channelId)) {
+            log.warn("\n大华设备抓图参数非法，ip: {}, port: {}, channelId: {}", ip, port, channelId);
+            return EMPTY_BYTES;
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        byte[] pictureBytes = EMPTY_BYTES;
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            pictureBytes = session == null ? EMPTY_BYTES : session.capturePicture(channelId);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            pictureBytes = session == null ? EMPTY_BYTES : session.capturePicture(channelId);
+        } else {
+            log.warn("\n当前平台不支持大华设备抓图: {}", platformDetector.currentPlatformDescription());
+            return EMPTY_BYTES;
+        }
+
+        if (pictureBytes.length > 0) {
+            // 图片保存到本地
+            saveCapturePicture(pictureBytes, ip, port, channelId);
+        }
+        return pictureBytes;
     }
 
     /**
@@ -210,8 +252,48 @@ public class DhSdkServiceImpl implements DhSdkService {
                 && presetIndex > 0;
     }
 
+    /**
+     * 校验抓图请求参数。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return 参数是否合法
+     */
+    private boolean isValidCapturePictureRequest(String ip, int port, String username, String password, int channelId) {
+        return isValidPresetListRequest(ip, port, username, password, channelId);
+    }
+
     /** 校验端口是否在合法范围内（大华常用端口如 37777 超出 short 范围，故用 int）。 */
     private boolean isValidPort(int port) {
         return port > 0 && port <= 65535;
+    }
+
+    /**
+     * 将抓图字节保存为本地 JPEG 文件。
+     *
+     * @param pictureBytes 图片字节
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param channelId 通道号
+     */
+    private void saveCapturePicture(byte[] pictureBytes, String ip, int port, int channelId) {
+        try {
+            File captureDir = new File("./capture/");
+            if (!captureDir.exists() && !captureDir.mkdirs()) {
+                log.warn("创建抓图目录失败，path: {}", captureDir.getAbsolutePath());
+                return;
+            }
+
+            String fileName = String.format("%s_%d_ch%d_%s.jpg",
+                    ip.replace('.', '_'), port, channelId, ToolKits.getDate());
+            String filePath = new File(captureDir, fileName).getAbsolutePath();
+            ToolKits.savePicture(pictureBytes, filePath);
+            log.info("大华设备抓图已保存，file: {}", filePath);
+        } catch (IOException ex) {
+            log.warn("大华设备抓图保存失败，ip: {}, port: {}, channelId: {}", ip, port, channelId, ex);
+        }
     }
 }

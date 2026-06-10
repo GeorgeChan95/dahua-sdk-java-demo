@@ -5,6 +5,7 @@ import com.csg.demo.config.DahuaSdkProperties;
 import com.csg.demo.dahua.lib.ToolKits;
 import com.csg.demo.dahua.support.NativeLibraryExtractor;
 import com.csg.demo.dahua.support.PlatformDetector;
+import com.csg.demo.dahua.support.SnapPictureCallbackRegistry;
 import com.csg.demo.dahua.lib.LibraryLoad;
 import com.csg.demo.dahua.lib.NetSDKLib;
 import lombok.extern.slf4j.Slf4j;
@@ -210,6 +211,8 @@ public class DahuaSdkLifecycle implements SmartLifecycle {
 
         // 设置重连回调
         netSdk.CLIENT_SetAutoReconnect(reconnect, null);
+        // 设置远程抓图回调；回调对象由 SnapPictureCallbackRegistry 持有强引用。
+        netSdk.CLIENT_SetSnapRevCallBack(SnapPictureCallbackRegistry.CALLBACK, null);
         // 设置连接时间
         netSdk.CLIENT_SetConnectTime(5000, 1);
         // 设置网络参数

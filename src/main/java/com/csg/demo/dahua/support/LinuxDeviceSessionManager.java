@@ -40,13 +40,11 @@ public class LinuxDeviceSessionManager {
         return sessionMap.values();
     }
 
-    /** 获取已登录设备会话；未登录时返回 null，不会隐式创建或登录。 */
+    /** 获取已登录设备会话；未登录时自动登录，登录失败返回 null 且不缓存。 */
     public LinuxDhDeviceSession getSession(String ip, int port, String username, String password) {
-        // 以设备的ip和端口作为key，缓存登录
-        return sessionMap.computeIfAbsent(buildKey(ip, port),k->{
-            LinuxDhDeviceSession session = new LinuxDhDeviceSession(ip,port,username,password);
-            session.login();
-            return session;
+        return sessionMap.compute(buildKey(ip, port), (key, existing) -> {
+            LinuxDhDeviceSession session = existing != null ? existing : new LinuxDhDeviceSession(ip, port, username, password);
+            return session.login() ? session : null;
         });
     }
 
