@@ -4,6 +4,8 @@ import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.PtzLocationInfoDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
+import com.csg.demo.dto.TalkFormatDTO;
+import com.csg.demo.dahua.support.TalkSessionRegistry;
 
 import java.util.List;
 
@@ -115,6 +117,53 @@ public interface DhSdkService {
      * @return 下载任务状态；不存在时返回 null
      */
     RecordDownloadTaskDTO getRecordDownloadTask(String taskId);
+
+    /**
+     * 查询设备支持的语音对讲编码格式。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @return 支持的 G711A/G711U 编码格式列表
+     */
+    List<TalkFormatDTO> listTalkFormats(String ip, int port, String username, String password);
+
+    /**
+     * 开启语音对讲。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param encoding 编码格式，支持 G711A、G711U
+     * @param talkSession 对讲会话
+     * @return 是否开启成功
+     */
+    boolean startTalk(String ip, int port, String username, String password, int channelId,
+                      String encoding, TalkSessionRegistry.TalkSession talkSession);
+
+    /**
+     * 发送客户端上行裸 G711 音频帧到设备。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param talkSession 对讲会话
+     * @param audioBytes 裸音频帧
+     * @return 是否发送成功
+     */
+    boolean sendTalkAudio(String ip, int port, String username, String password,
+                          TalkSessionRegistry.TalkSession talkSession, byte[] audioBytes);
+
+    /**
+     * 停止语音对讲。
+     *
+     * @param talkSession 对讲会话
+     */
+    void stopTalk(TalkSessionRegistry.TalkSession talkSession);
 
     /**
      * 查询云台预置点列表。

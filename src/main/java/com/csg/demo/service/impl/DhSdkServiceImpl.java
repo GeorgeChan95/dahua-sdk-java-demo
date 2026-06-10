@@ -7,6 +7,7 @@ import com.csg.demo.dto.PtzLocationInfoDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
+import com.csg.demo.dto.TalkFormatDTO;
 import com.csg.demo.service.DhSdkService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -279,6 +280,113 @@ public class DhSdkServiceImpl implements DhSdkService {
     }
 
     /**
+     * 查询设备支持的语音对讲编码格式。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @return 支持的 G711A/G711U 编码格式列表
+     */
+    @Override
+    public List<TalkFormatDTO> listTalkFormats(String ip, int port, String username, String password) {
+        if (!isValidTalkBaseRequest(ip, port, username, password)) {
+            log.warn("\n大华语音对讲格式查询参数非法，ip: {}, port: {}", ip, port);
+            return Collections.emptyList();
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session == null ? Collections.emptyList() : session.listTalkFormats();
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session == null ? Collections.emptyList() : session.listTalkFormats();
+        }
+
+        log.warn("\n当前平台不支持大华语音对讲格式查询: {}", platformDetector.currentPlatformDescription());
+        return Collections.emptyList();
+    }
+
+    /**
+     * 开启语音对讲。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param encoding 编码格式，支持 G711A、G711U
+     * @param talkSession 对讲会话
+     * @return 是否开启成功
+     */
+    @Override
+    public boolean startTalk(String ip, int port, String username, String password, int channelId,
+                             String encoding, TalkSessionRegistry.TalkSession talkSession) {
+        if (!isValidTalkRequest(ip, port, username, password, channelId, encoding) || talkSession == null) {
+            log.warn("\n大华语音对讲启动参数非法，ip: {}, port: {}, channelId: {}, encoding: {}",
+                    ip, port, channelId, encoding);
+            return false;
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session != null && session.startTalk(channelId, talkSession);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session != null && session.startTalk(channelId, talkSession);
+        }
+
+        log.warn("\n当前平台不支持大华语音对讲启动: {}", platformDetector.currentPlatformDescription());
+        return false;
+    }
+
+    /**
+     * 发送客户端上行裸 G711 音频帧到设备。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param talkSession 对讲会话
+     * @param audioBytes 裸音频帧
+     * @return 是否发送成功
+     */
+    @Override
+    public boolean sendTalkAudio(String ip, int port, String username, String password,
+                                 TalkSessionRegistry.TalkSession talkSession, byte[] audioBytes) {
+        if (!isValidTalkBaseRequest(ip, port, username, password)
+                || talkSession == null || audioBytes == null || audioBytes.length == 0) {
+            return false;
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session != null && session.sendTalkAudio(talkSession, audioBytes);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session != null && session.sendTalkAudio(talkSession, audioBytes);
+        }
+
+        log.warn("\n当前平台不支持大华语音对讲音频发送: {}", platformDetector.currentPlatformDescription());
+        return false;
+    }
+
+    /**
+     * 停止语音对讲。
+     *
+     * @param talkSession 对讲会话
+     */
+    @Override
+    public void stopTalk(TalkSessionRegistry.TalkSession talkSession) {
+        if (talkSession != null) {
+            talkSession.close();
+        }
+    }
+
+    /**
      * 查询云台预置点列表。
      *
      * @param ip 设备 IP
@@ -400,6 +508,40 @@ public class DhSdkServiceImpl implements DhSdkService {
      */
     private boolean isValidCapturePictureRequest(String ip, int port, String username, String password, int channelId) {
         return isValidPresetListRequest(ip, port, username, password, channelId);
+    }
+
+    /**
+     * 校验语音对讲基础参数。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @return 参数是否合法
+     */
+    private boolean isValidTalkBaseRequest(String ip, int port, String username, String password) {
+        return StringUtils.isNotBlank(ip)
+                && isValidPort(port)
+                && StringUtils.isNotBlank(username)
+                && StringUtils.isNotBlank(password);
+    }
+
+    /**
+     * 校验语音对讲启动参数。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @param encoding 编码格式
+     * @return 参数是否合法
+     */
+    private boolean isValidTalkRequest(String ip, int port, String username, String password,
+                                       int channelId, String encoding) {
+        return isValidTalkBaseRequest(ip, port, username, password)
+                && channelId >= 0
+                && TalkSessionRegistry.TalkEncoding.fromName(encoding) != null;
     }
 
     /**

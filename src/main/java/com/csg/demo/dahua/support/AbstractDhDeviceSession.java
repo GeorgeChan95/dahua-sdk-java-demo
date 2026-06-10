@@ -2,10 +2,15 @@ package com.csg.demo.dahua.support;
 
 import com.csg.demo.dahua.lib.NetSDKLib;
 import com.csg.demo.dahua.lib.ToolKits;
+import com.csg.demo.dahua.lib.structure.NET_IN_START_TALK_INFO;
+import com.csg.demo.dahua.lib.structure.NET_IN_TALK_SEND_DATA_STREAM;
+import com.csg.demo.dahua.lib.structure.NET_OUT_START_TALK_INFO;
+import com.csg.demo.dahua.lib.structure.NET_OUT_TALK_SEND_DATA_STREAM;
 import com.csg.demo.dto.PtzLocationInfoDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
+import com.csg.demo.dto.TalkFormatDTO;
 import com.sun.jna.Memory;
 import com.sun.jna.ptr.IntByReference;
 import org.slf4j.Logger;
@@ -285,6 +290,137 @@ abstract class AbstractDhDeviceSession {
     }
 
     /**
+     * 查询设备支持的语音对讲编码格式。
+     *
+     * @return 支持的语音编码列表；未登录或查询失败时返回空列表
+     */
+    public synchronized List<TalkFormatDTO> listTalkFormats() {
+        List<TalkFormatDTO> formats = new ArrayList<>();
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法查询语音对讲格式，device: {}", platformName, getSessionKey());
+            return formats;
+        }
+
+        NetSDKLib.NETDEV_TALKFORMAT_LIST formatList = new NetSDKLib.NETDEV_TALKFORMAT_LIST();
+        formatList.write();
+        boolean success = NET_SDK.CLIENT_QueryDevState(loginHandle, NetSDKLib.NET_DEVSTATE_TALK_ECTYPE,
+                formatList.getPointer(), formatList.size(), new IntByReference(0), QUERY_TIMEOUT_MS);
+        if (!success) {
+            LOGGER.warn("\n{} 查询大华设备语音对讲格式失败，device: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return formats;
+        }
+
+        formatList.read();
+        int count = Math.min(formatList.nSupportNum, formatList.type.length);
+        for (int i = 0; i < count; i++) {
+            TalkFormatDTO dto = toTalkFormat(formatList.type[i]);
+            if (dto != null) {
+                formats.add(dto);
+            }
+        }
+        return formats;
+    }
+
+    /**
+     * 开启语音对讲。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @param talkSession 对讲会话
+     * @return 是否开启成功
+     */
+    public synchronized boolean startTalk(int channelId, TalkSessionRegistry.TalkSession talkSession) {
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法开启语音对讲，device: {}", platformName, getSessionKey());
+            return false;
+        }
+        if (talkSession == null || talkSession.getEncoding() == null) {
+            LOGGER.warn("\n{} 语音对讲会话参数非法，device: {}", platformName, getSessionKey());
+            return false;
+        }
+
+        NetSDKLib.NETDEV_TALKDECODE_INFO talkEncode = buildTalkDecodeInfo(talkSession.getEncoding());
+        if (!setTalkEncodeType(talkEncode)) {
+            return false;
+        }
+        if (!setTalkSpeakParam()) { // 设置语音对讲编码格式
+            return false;
+        }
+        if (channelId > 0 && !setTalkChannel(channelId)) { // 设置 NVR 等多通道设备的对讲转发通道。
+            return false;
+        }
+
+        NET_IN_START_TALK_INFO inParam = new NET_IN_START_TALK_INFO();
+        NET_OUT_START_TALK_INFO outParam = new NET_OUT_START_TALK_INFO();
+        inParam.pfAudioDataCallBackEx = talkSession.getAudioCallback();
+        inParam.dwUser = null;
+        inParam.write();
+        outParam.write();
+        NetSDKLib.LLong talkHandle = NET_SDK.CLIENT_StartTalkByDataType(loginHandle,
+                inParam.getPointer(), outParam.getPointer(), RECORD_QUERY_TIMEOUT_MS);
+        if (talkHandle.longValue() == 0) {
+            LOGGER.warn("\n{} 大华设备语音对讲启动失败，device: {}, channelId: {}, encoding: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, talkSession.getEncoding().getName(),
+                    Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return false;
+        }
+
+        talkSession.start(talkHandle);
+        LOGGER.info("\n{} 大华设备语音对讲已启动，device: {}, channelId: {}, encoding: {}, talkHandle: {}",
+                platformName, getSessionKey(), channelId, talkSession.getEncoding().getName(), talkHandle.longValue());
+        return true;
+    }
+
+    /**
+     * 发送客户端上行裸 G711 音频帧到设备。
+     *
+     * @param talkSession 对讲会话
+     * @param audioBytes 裸音频帧
+     * @return 是否发送成功
+     */
+    public synchronized boolean sendTalkAudio(TalkSessionRegistry.TalkSession talkSession, byte[] audioBytes) {
+        if (talkSession == null || talkSession.isClosed()
+                || talkSession.getTalkHandle() == null || talkSession.getTalkHandle().longValue() == 0
+                || audioBytes == null || audioBytes.length == 0) {
+            return false;
+        }
+
+        Memory audioBuffer = new Memory(audioBytes.length);
+        try {
+            audioBuffer.write(0, audioBytes, 0, audioBytes.length);
+            NET_IN_TALK_SEND_DATA_STREAM inParam = new NET_IN_TALK_SEND_DATA_STREAM();
+            NET_OUT_TALK_SEND_DATA_STREAM outParam = new NET_OUT_TALK_SEND_DATA_STREAM();
+            inParam.pBuf = audioBuffer;
+            inParam.dwBufSize = audioBytes.length;
+            inParam.bNeedHead = 1;
+            inParam.emEncodeType = talkSession.getEncoding().getSdkValue();
+            inParam.nAudioBit = 8;
+            inParam.dwSampleRate = 8000;
+            inParam.write();
+            outParam.write();
+
+            NetSDKLib.LLong result = NET_SDK.CLIENT_TalkSendDataByStream(talkSession.getTalkHandle(),
+                    inParam.getPointer(), outParam.getPointer());
+            boolean success = result.longValue() != 0;
+            if (!success) {
+                LOGGER.warn("\n{} 发送大华语音对讲音频失败，device: {}, talkSessionId: {}, 错误码: 0x{}",
+                        platformName, getSessionKey(), talkSession.getSessionId(),
+                        Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            }
+            return success;
+        } finally {
+            audioBuffer.close();
+        }
+    }
+
+    /** 停止语音对讲。 */
+    public synchronized void stopTalk(TalkSessionRegistry.TalkSession talkSession) {
+        if (talkSession != null) {
+            talkSession.close();
+        }
+    }
+
+    /**
      * 查询当前通道的云台预置点列表。
      *
      * @param channelId 通道号，从 0 开始
@@ -440,6 +576,84 @@ abstract class AbstractDhDeviceSession {
         return recordArray;
     }
 
+    /** 将 SDK 语音编码结构转换为接口返回对象。 */
+    private TalkFormatDTO toTalkFormat(NetSDKLib.NETDEV_TALKDECODE_INFO decodeInfo) {
+        String name = toTalkEncodingName(decodeInfo.encodeType);
+        if (name == null) {
+            return null;
+        }
+
+        TalkFormatDTO dto = new TalkFormatDTO();
+        dto.setEncodeType(decodeInfo.encodeType);
+        dto.setName(name);
+        dto.setAudioBit(decodeInfo.nAudioBit);
+        dto.setSampleRate(decodeInfo.dwSampleRate);
+        dto.setPacketPeriod(decodeInfo.nPacketPeriod);
+        return dto;
+    }
+
+    /** 构造 SDK 对讲编码参数，G711 通常使用 8kHz/8bit/25ms。 */
+    private NetSDKLib.NETDEV_TALKDECODE_INFO buildTalkDecodeInfo(TalkSessionRegistry.TalkEncoding encoding) {
+        NetSDKLib.NETDEV_TALKDECODE_INFO talkEncode = new NetSDKLib.NETDEV_TALKDECODE_INFO();
+        talkEncode.encodeType = encoding.getSdkValue();
+        talkEncode.dwSampleRate = 8000; // 8000Hz
+        talkEncode.nAudioBit = 8; // 8 bit
+        talkEncode.nPacketPeriod = 25; // 打包周期
+        return talkEncode;
+    }
+
+    /** 设置语音对讲编码格式。 */
+    private boolean setTalkEncodeType(NetSDKLib.NETDEV_TALKDECODE_INFO talkEncode) {
+        talkEncode.write();
+        boolean success = NET_SDK.CLIENT_SetDeviceMode(loginHandle,
+                NetSDKLib.EM_USEDEV_MODE.NET_TALK_ENCODE_TYPE, talkEncode.getPointer());
+        if (!success) {
+            LOGGER.warn("\n{} 设置大华语音对讲编码失败，device: {}, encoding: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), talkEncode.encodeType,
+                    Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+        }
+        return success;
+    }
+
+    /** 设置语音对讲模式。 */
+    private boolean setTalkSpeakParam() {
+        NetSDKLib.NET_SPEAK_PARAM speakParam = new NetSDKLib.NET_SPEAK_PARAM();
+        speakParam.nMode = 0;
+        speakParam.bEnableWait = 0;
+        speakParam.nSpeakerChannel = 0;
+        speakParam.write();
+        boolean success = NET_SDK.CLIENT_SetDeviceMode(loginHandle,
+                NetSDKLib.EM_USEDEV_MODE.NET_TALK_SPEAK_PARAM, speakParam.getPointer());
+        if (!success) {
+            LOGGER.warn("\n{} 设置大华语音对讲模式失败，device: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+        }
+        return success;
+    }
+
+    /** 设置 NVR 等多通道设备的对讲转发通道。 */
+    private boolean setTalkChannel(int channelId) {
+        NetSDKLib.NET_TALK_TRANSFER_PARAM transferParam = new NetSDKLib.NET_TALK_TRANSFER_PARAM();
+        transferParam.bTransfer = 1; // 开启语音对讲转发模式
+        transferParam.write();
+        boolean transferSuccess = NET_SDK.CLIENT_SetDeviceMode(loginHandle,
+                NetSDKLib.EM_USEDEV_MODE.NET_TALK_TRANSFER_MODE, transferParam.getPointer());
+        if (!transferSuccess) {
+            LOGGER.warn("\n{} 设置大华语音对讲转发模式失败，device: {}, channelId: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return false;
+        }
+
+        IntByReference channel = new IntByReference(channelId);
+        boolean channelSuccess = NET_SDK.CLIENT_SetDeviceMode(loginHandle,
+                NetSDKLib.EM_USEDEV_MODE.NET_TALK_TALK_CHANNEL, channel.getPointer());
+        if (!channelSuccess) {
+            LOGGER.warn("\n{} 设置大华语音对讲通道失败，device: {}, channelId: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+        }
+        return channelSuccess;
+    }
+
     /**
      * 将 SDK 云台位置结构转换为接口返回对象。
      *
@@ -590,6 +804,16 @@ abstract class AbstractDhDeviceSession {
 
     private static Double toRatio(int value, int scale) {
         return value / (double) scale;
+    }
+
+    private static String toTalkEncodingName(int encodeType) {
+        if (encodeType == NetSDKLib.NET_TALK_CODING_TYPE.NET_TALK_G711a) {
+            return "G711A";
+        }
+        if (encodeType == NetSDKLib.NET_TALK_CODING_TYPE.NET_TALK_G711u) {
+            return "G711U";
+        }
+        return null;
     }
 
     /** 将字符串写入 SDK 固定长度字节数组，预留末尾 1 字节作为 C 字符串结束符。 */

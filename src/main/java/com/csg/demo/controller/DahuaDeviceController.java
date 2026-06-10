@@ -10,6 +10,8 @@ import com.csg.demo.dto.RecordDownloadRequestDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
 import com.csg.demo.dto.RecordFileQueryRequestDTO;
+import com.csg.demo.dto.TalkFormatDTO;
+import com.csg.demo.dto.TalkRequestDTO;
 import com.csg.demo.service.DhSdkService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -128,6 +130,18 @@ public class DahuaDeviceController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(task);
+    }
+
+    /**
+     * 查询设备支持的语音对讲编码格式。
+     *
+     * @param request 对讲请求参数，包含设备地址和登录凭据
+     * @return 支持的 G711A/G711U 编码格式列表
+     */
+    @PostMapping("/talk/formats")
+    public List<TalkFormatDTO> listTalkFormats(@RequestBody TalkRequestDTO request) {
+        return dhSdkService.listTalkFormats(request.getIp(), request.getPort(),
+                request.getUsername(), request.getPassword());
     }
 
     /**
