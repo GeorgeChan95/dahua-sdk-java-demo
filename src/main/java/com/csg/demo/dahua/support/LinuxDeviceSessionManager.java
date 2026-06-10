@@ -19,15 +19,12 @@ public class LinuxDeviceSessionManager {
     private final Map<String, LinuxDhDeviceSession> sessionMap = new ConcurrentHashMap<>();
 
     /** 登录并缓存会话；登录失败时不缓存，返回 false。 */
-    public AbstractDhDeviceSession login(String ip, int port, String username, String password) {
-        // 只在key不存在时才进行登录，避免重复登录
-        String key = ip + ":" + port;
-        LinuxDhDeviceSession session = sessionMap.computeIfAbsent(key, k -> {
-            LinuxDhDeviceSession target = new LinuxDhDeviceSession(ip, port, username, password);
-            target.login();
-            return target;
+    public boolean login(String ip, int port, String username, String password) {
+        LinuxDhDeviceSession session = sessionMap.compute(buildKey(ip, port), (key, existing) -> {
+            LinuxDhDeviceSession target = existing != null ? existing : new LinuxDhDeviceSession(ip, port, username, password);
+            return target.login() ? target : null;
         });
-        return session;
+        return session != null;
     }
 
     /** 注销并移除会话；本未登录或注销成功返回 true，注销失败保留会话并返回 false。 */
@@ -41,6 +38,16 @@ public class LinuxDeviceSessionManager {
     /** 返回当前缓存的所有会话，供心跳检测遍历。 */
     public Collection<LinuxDhDeviceSession> getAllSessions() {
         return sessionMap.values();
+    }
+
+    /** 获取已登录设备会话；未登录时返回 null，不会隐式创建或登录。 */
+    public LinuxDhDeviceSession getSession(String ip, int port, String username, String password) {
+        // 以设备的ip和端口作为key，缓存登录
+        return sessionMap.computeIfAbsent(buildKey(ip, port),k->{
+            LinuxDhDeviceSession session = new LinuxDhDeviceSession(ip,port,username,password);
+            session.login();
+            return session;
+        });
     }
 
     /** 以 ip:port 构造缓存 key。 */

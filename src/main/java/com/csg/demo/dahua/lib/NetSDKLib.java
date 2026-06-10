@@ -9194,21 +9194,21 @@ public interface NetSDKLib extends Library {
     // 通用云台控制命令
     public static class NET_PTZ_ControlType extends SdkStructure
     {
-        public static final int   NET_PTZ_UP_CONTROL = 0;               //上
-        public static final int   NET_PTZ_DOWN_CONTROL = NET_PTZ_UP_CONTROL+1; //下
-        public static final int   NET_PTZ_LEFT_CONTROL = NET_PTZ_DOWN_CONTROL+1; //左
-        public static final int   NET_PTZ_RIGHT_CONTROL = NET_PTZ_LEFT_CONTROL+1; //右
-        public static final int   NET_PTZ_ZOOM_ADD_CONTROL = NET_PTZ_RIGHT_CONTROL+1; //变倍+
-        public static final int   NET_PTZ_ZOOM_DEC_CONTROL = NET_PTZ_ZOOM_ADD_CONTROL+1; //变倍-
-        public static final int   NET_PTZ_FOCUS_ADD_CONTROL = NET_PTZ_ZOOM_DEC_CONTROL+1; //调焦+
-        public static final int   NET_PTZ_FOCUS_DEC_CONTROL = NET_PTZ_FOCUS_ADD_CONTROL+1; //调焦-
-        public static final int   NET_PTZ_APERTURE_ADD_CONTROL = NET_PTZ_FOCUS_DEC_CONTROL+1; //光圈+
-        public static final int   NET_PTZ_APERTURE_DEC_CONTROL = NET_PTZ_APERTURE_ADD_CONTROL+1; //光圈-
-        public static final int   NET_PTZ_POINT_MOVE_CONTROL = NET_PTZ_APERTURE_DEC_CONTROL+1; //转至预置点
-        public static final int   NET_PTZ_POINT_SET_CONTROL = NET_PTZ_POINT_MOVE_CONTROL+1; //设置
-        public static final int   NET_PTZ_POINT_DEL_CONTROL = NET_PTZ_POINT_SET_CONTROL+1; //删除
-        public static final int   NET_PTZ_POINT_LOOP_CONTROL = NET_PTZ_POINT_DEL_CONTROL+1; //点间巡航
-        public static final int   NET_PTZ_LAMP_CONTROL = NET_PTZ_POINT_LOOP_CONTROL+1; //灯光雨刷
+        public static final int   NET_PTZ_UP_CONTROL = 0;               //上 ==> 0
+        public static final int   NET_PTZ_DOWN_CONTROL = NET_PTZ_UP_CONTROL+1; //下 ==> 1
+        public static final int   NET_PTZ_LEFT_CONTROL = NET_PTZ_DOWN_CONTROL+1; //左 ==>
+        public static final int   NET_PTZ_RIGHT_CONTROL = NET_PTZ_LEFT_CONTROL+1; //右 ==>
+        public static final int   NET_PTZ_ZOOM_ADD_CONTROL = NET_PTZ_RIGHT_CONTROL+1; //变倍+ ==>
+        public static final int   NET_PTZ_ZOOM_DEC_CONTROL = NET_PTZ_ZOOM_ADD_CONTROL+1; //变倍- ==>
+        public static final int   NET_PTZ_FOCUS_ADD_CONTROL = NET_PTZ_ZOOM_DEC_CONTROL+1; //调焦+ ==>
+        public static final int   NET_PTZ_FOCUS_DEC_CONTROL = NET_PTZ_FOCUS_ADD_CONTROL+1; //调焦- ==>
+        public static final int   NET_PTZ_APERTURE_ADD_CONTROL = NET_PTZ_FOCUS_DEC_CONTROL+1; //光圈+ ==>
+        public static final int   NET_PTZ_APERTURE_DEC_CONTROL = NET_PTZ_APERTURE_ADD_CONTROL+1; //光圈- ==>
+        public static final int   NET_PTZ_POINT_MOVE_CONTROL = NET_PTZ_APERTURE_DEC_CONTROL+1; //转至预置点 ==>
+        public static final int   NET_PTZ_POINT_SET_CONTROL = NET_PTZ_POINT_MOVE_CONTROL+1; //设置 ==>
+        public static final int   NET_PTZ_POINT_DEL_CONTROL = NET_PTZ_POINT_SET_CONTROL+1; //删除 ==>
+        public static final int   NET_PTZ_POINT_LOOP_CONTROL = NET_PTZ_POINT_DEL_CONTROL+1; //点间巡航 ==>
+        public static final int   NET_PTZ_LAMP_CONTROL = NET_PTZ_POINT_LOOP_CONTROL+1; //灯光雨刷 ==>
     }
 
     // 云台控制扩展命令
