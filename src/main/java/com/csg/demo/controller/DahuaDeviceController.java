@@ -2,6 +2,8 @@ package com.csg.demo.controller;
 
 import com.csg.demo.dto.CapturePictureRequestDTO;
 import com.csg.demo.dto.PtzControlRequestDTO;
+import com.csg.demo.dto.PtzLocationInfoDTO;
+import com.csg.demo.dto.PtzLocationRequestDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.PtzPresetRequestDTO;
 import com.csg.demo.dto.RecordDownloadRequestDTO;
@@ -51,6 +53,18 @@ public class DahuaDeviceController {
     public boolean control(@RequestBody PtzControlRequestDTO request) {
         return dhSdkService.control(request.getIp(), request.getPort(), request.getUsername(), request.getPassword(), request.getChannelId(),
                 request.getCommand(), request.getParam1(), request.getParam2(), request.getParam3(), request.isStop());
+    }
+
+    /**
+     * 查询当前通道的云台位置信息。
+     *
+     * @param request 云台位置查询请求参数
+     * @return 云台位置信息；设备不支持时字段为空
+     */
+    @PostMapping("/ptz/location")
+    public PtzLocationInfoDTO getPtzLocation(@RequestBody PtzLocationRequestDTO request) {
+        return dhSdkService.getPtzLocation(request.getIp(), request.getPort(), request.getUsername(),
+                request.getPassword(), request.getChannelId());
     }
 
     /**

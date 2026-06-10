@@ -1,6 +1,7 @@
 package com.csg.demo.service;
 
 import com.csg.demo.dto.PtzPresetInfoDTO;
+import com.csg.demo.dto.PtzLocationInfoDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
 
@@ -48,6 +49,18 @@ public interface DhSdkService {
      */
     boolean control(String ip, int port, String username, String password, int channelId, int command,
                     int param1, int param2, int param3, boolean stop);
+
+    /**
+     * 查询当前通道的云台位置信息。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return 云台位置信息；设备不支持或查询失败时返回空对象
+     */
+    PtzLocationInfoDTO getPtzLocation(String ip, int port, String username, String password, int channelId);
 
     /**
      * 远程抓取当前通道的一张图片。

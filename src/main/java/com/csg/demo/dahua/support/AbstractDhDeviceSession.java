@@ -2,6 +2,7 @@ package com.csg.demo.dahua.support;
 
 import com.csg.demo.dahua.lib.NetSDKLib;
 import com.csg.demo.dahua.lib.ToolKits;
+import com.csg.demo.dto.PtzLocationInfoDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
@@ -145,6 +146,35 @@ abstract class AbstractDhDeviceSession {
                     Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
         }
         return success;
+    }
+
+    /**
+     * 查询当前通道的云台位置信息。
+     *
+     * @param channelId 通道号，从 0 开始
+     * @return 云台位置信息；未登录、设备不支持或查询失败时返回空对象
+     */
+    public synchronized PtzLocationInfoDTO getPtzLocation(int channelId) {
+        PtzLocationInfoDTO emptyInfo = new PtzLocationInfoDTO();
+        emptyInfo.setChannelId(channelId);
+        if (!isLoggedIn()) {
+            LOGGER.warn("\n{} 大华设备未登录，无法查询云台位置，device: {}", platformName, getSessionKey());
+            return emptyInfo;
+        }
+
+        NetSDKLib.NET_PTZ_LOCATION_INFO locationInfo = new NetSDKLib.NET_PTZ_LOCATION_INFO();
+        locationInfo.nChannelID = channelId;
+        locationInfo.write();
+        boolean success = NET_SDK.CLIENT_QueryDevState(loginHandle, NetSDKLib.NET_DEVSTATE_PTZ_LOCATION,
+                locationInfo.getPointer(), locationInfo.size(), new IntByReference(0), QUERY_TIMEOUT_MS);
+        if (!success) {
+            LOGGER.warn("\n{} 查询大华设备云台位置失败，device: {}, channelId: {}, 错误码: 0x{}",
+                    platformName, getSessionKey(), channelId, Integer.toHexString(NET_SDK.CLIENT_GetLastError()));
+            return emptyInfo;
+        }
+
+        locationInfo.read();
+        return toPtzLocationInfo(locationInfo);
     }
 
     /**
@@ -411,6 +441,37 @@ abstract class AbstractDhDeviceSession {
     }
 
     /**
+     * 将 SDK 云台位置结构转换为接口返回对象。
+     *
+     * @param location SDK 返回的云台位置结构
+     * @return 云台位置信息
+     */
+    private PtzLocationInfoDTO toPtzLocationInfo(NetSDKLib.NET_PTZ_LOCATION_INFO location) {
+        PtzLocationInfoDTO dto = new PtzLocationInfoDTO();
+        dto.setChannelId(location.nChannelID);
+        dto.setPtzPan(location.nPTZPan);
+        dto.setPanDegree(toRatio(location.nPTZPan, 10));
+        dto.setPtzTilt(location.nPTZTilt);
+        dto.setTiltDegree(toRatio(location.nPTZTilt, 10));
+        dto.setPtzZoom(location.nPTZZoom);
+        dto.setFocusPosition(location.fFocusPosition);
+        dto.setZoomValue(location.nZoomValue);
+        dto.setZoomValueRatio(toRatio(location.nZoomValue, 100));
+        dto.setAbsPositionX(location.stuAbsPosition.nPosX);
+        dto.setAbsPositionXDegree(toRatio(location.stuAbsPosition.nPosX, 100));
+        dto.setAbsPositionY(location.stuAbsPosition.nPosY);
+        dto.setAbsPositionYDegree(toRatio(location.stuAbsPosition.nPosY, 100));
+        dto.setAbsPositionZoom(location.stuAbsPosition.nZoom);
+        dto.setAbsPositionZoomRatio(toRatio(location.stuAbsPosition.nZoom, 100));
+        dto.setFocusMapValue(location.nFocusMapValue);
+        dto.setZoomMapValue(location.nZoomMapValue);
+        dto.setState(Byte.toUnsignedInt(location.bState));
+        dto.setFocusState(Byte.toUnsignedInt(location.bFocusState));
+        dto.setZoomState(Byte.toUnsignedInt(location.bZoomState));
+        return dto;
+    }
+
+    /**
      * 将 SDK 录像文件结构转换为接口返回对象。
      *
      * @param record SDK 返回的录像文件结构
@@ -525,6 +586,10 @@ abstract class AbstractDhDeviceSession {
 
     private static boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private static Double toRatio(int value, int scale) {
+        return value / (double) scale;
     }
 
     /** 将字符串写入 SDK 固定长度字节数组，预留末尾 1 字节作为 C 字符串结束符。 */

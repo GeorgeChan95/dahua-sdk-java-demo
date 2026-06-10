@@ -3,6 +3,7 @@ package com.csg.demo.service.impl;
 import com.csg.demo.config.DahuaPlatform;
 import com.csg.demo.dahua.lib.ToolKits;
 import com.csg.demo.dahua.support.*;
+import com.csg.demo.dto.PtzLocationInfoDTO;
 import com.csg.demo.dto.PtzPresetInfoDTO;
 import com.csg.demo.dto.RecordDownloadTaskDTO;
 import com.csg.demo.dto.RecordFileInfoDTO;
@@ -114,6 +115,38 @@ public class DhSdkServiceImpl implements DhSdkService {
 
         log.warn("\n当前平台不支持大华云台控制: {}", platformDetector.currentPlatformDescription());
         return false;
+    }
+
+    /**
+     * 查询当前通道的云台位置信息。
+     *
+     * @param ip 设备 IP
+     * @param port 设备端口
+     * @param username 用户名，未登录时用于自动登录
+     * @param password 密码，未登录时用于自动登录
+     * @param channelId 通道号，从 0 开始
+     * @return 云台位置信息；参数非法、平台不支持或设备不支持时返回空对象
+     */
+    @Override
+    public PtzLocationInfoDTO getPtzLocation(String ip, int port, String username, String password, int channelId) {
+        PtzLocationInfoDTO emptyInfo = new PtzLocationInfoDTO();
+        emptyInfo.setChannelId(channelId);
+        if (!isValidPresetListRequest(ip, port, username, password, channelId)) {
+            log.warn("\n大华云台位置查询参数非法，ip: {}, port: {}, channelId: {}", ip, port, channelId);
+            return emptyInfo;
+        }
+
+        DahuaPlatform platform = platformDetector.detect();
+        if (platform == DahuaPlatform.LINUX64) {
+            LinuxDhDeviceSession session = linuxSessionManager.getSession(ip, port, username, password);
+            return session == null ? emptyInfo : session.getPtzLocation(channelId);
+        } else if (platform == DahuaPlatform.WINDOWS64) {
+            WindowsDhDeviceSession session = windowsSessionManager.getSession(ip, port, username, password);
+            return session == null ? emptyInfo : session.getPtzLocation(channelId);
+        }
+
+        log.warn("\n当前平台不支持大华云台位置查询: {}", platformDetector.currentPlatformDescription());
+        return emptyInfo;
     }
 
     /**
