@@ -13,6 +13,7 @@ import com.csg.demo.dto.RecordFileQueryRequestDTO;
 import com.csg.demo.dto.TalkFormatDTO;
 import com.csg.demo.dto.TalkRequestDTO;
 import com.csg.demo.service.DhSdkService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,6 +29,7 @@ import java.util.List;
  *
  * @author George
  */
+@Slf4j
 @RestController
 @RequestMapping("/dahua/device")
 public class DahuaDeviceController {
@@ -53,6 +55,7 @@ public class DahuaDeviceController {
     /** 执行云台控制命令，stop=false 表示开始，stop=true 表示停止。 */
     @PostMapping("/control")
     public boolean control(@RequestBody PtzControlRequestDTO request) {
+        log.info("参数为：{}", request);
         return dhSdkService.control(request.getIp(), request.getPort(), request.getUsername(), request.getPassword(), request.getChannelId(),
                 request.getCommand(), request.getParam1(), request.getParam2(), request.getParam3(), request.isStop());
     }
@@ -65,6 +68,7 @@ public class DahuaDeviceController {
      */
     @PostMapping("/ptz/location")
     public PtzLocationInfoDTO getPtzLocation(@RequestBody PtzLocationRequestDTO request) {
+        log.info("参数为：{}", request);
         return dhSdkService.getPtzLocation(request.getIp(), request.getPort(), request.getUsername(),
                 request.getPassword(), request.getChannelId());
     }
@@ -77,6 +81,7 @@ public class DahuaDeviceController {
      */
     @PostMapping(value = "/capture", produces = MediaType.IMAGE_JPEG_VALUE)
     public ResponseEntity<byte[]> capturePicture(@RequestBody CapturePictureRequestDTO request) {
+        log.info("参数为：{}", request);
         byte[] pictureBytes = dhSdkService.capturePicture(request.getIp(), request.getPort(), request.getUsername(),
                 request.getPassword(), request.getChannelId());
         if (pictureBytes.length == 0) {
@@ -95,6 +100,7 @@ public class DahuaDeviceController {
      */
     @PostMapping("/record/list")
     public List<RecordFileInfoDTO> listRecordFiles(@RequestBody RecordFileQueryRequestDTO request) {
+        log.info("参数为：{}", request);
         return dhSdkService.listRecordFiles(request.getIp(), request.getPort(), request.getUsername(),
                 request.getPassword(), request.getChannelId(), request.getStartTime(), request.getEndTime(),
                 request.getMaxCount());
@@ -108,6 +114,7 @@ public class DahuaDeviceController {
      */
     @PostMapping("/record/download")
     public ResponseEntity<RecordDownloadTaskDTO> downloadRecordFile(@RequestBody RecordDownloadRequestDTO request) {
+        log.info("参数为：{}", request);
         RecordDownloadTaskDTO task = dhSdkService.downloadRecordFile(request.getIp(), request.getPort(),
                 request.getUsername(), request.getPassword(), request.getChannelId(), request.getStartTime(),
                 request.getEndTime(), request.getRecordFileType(), request.getFileName());
@@ -140,6 +147,7 @@ public class DahuaDeviceController {
      */
     @PostMapping("/talk/formats")
     public List<TalkFormatDTO> listTalkFormats(@RequestBody TalkRequestDTO request) {
+        log.info("参数为：{}", request);
         return dhSdkService.listTalkFormats(request.getIp(), request.getPort(),
                 request.getUsername(), request.getPassword());
     }
@@ -152,6 +160,7 @@ public class DahuaDeviceController {
      */
     @PostMapping("/preset/list")
     public List<PtzPresetInfoDTO> listPresets(@RequestBody PtzPresetRequestDTO request) {
+        log.info("参数为：{}", request);
         return dhSdkService.listPresets(request.getIp(), request.getPort(), request.getUsername(),
                 request.getPassword(), request.getChannelId());
     }
@@ -164,6 +173,7 @@ public class DahuaDeviceController {
      */
     @PostMapping("/preset/goto")
     public boolean gotoPreset(@RequestBody PtzPresetRequestDTO request) {
+        log.info("参数为：{}", request);
         return dhSdkService.gotoPreset(request.getIp(), request.getPort(), request.getUsername(),
                 request.getPassword(), request.getChannelId(), request.getPresetIndex());
     }
