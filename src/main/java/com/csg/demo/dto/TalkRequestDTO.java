@@ -24,4 +24,11 @@ public class TalkRequestDTO {
 
     /** 音频编码格式，支持 G711A、G711U。 */
     private String encoding;
+
+    public int getChannelId() {
+        if (channelId > 0) {
+            return channelId - 1;
+        }
+        return channelId;
+    }
 }

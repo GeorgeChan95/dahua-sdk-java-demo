@@ -33,4 +33,11 @@ public class RecordDownloadRequestDTO {
 
     /** 本地保存文件名，可为空；为空时自动生成 .mp4 文件名。 */
     private String fileName;
+
+    public int getChannelId() {
+        if (channelId > 0) {
+            return channelId - 1;
+        }
+        return channelId;
+    }
 }

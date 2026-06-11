@@ -501,11 +501,8 @@ abstract class AbstractDhDeviceSession {
      * @return 已初始化的预置点结构数组
      */
     private NetSDKLib.NET_PTZ_PRESET[] createPresetArray() {
-        NetSDKLib.NET_PTZ_PRESET[] presetArray = new NetSDKLib.NET_PTZ_PRESET[MAX_PRESET_COUNT];
-        for (int i = 0; i < presetArray.length; i++) {
-            presetArray[i] = new NetSDKLib.NET_PTZ_PRESET();
-        }
-        return presetArray;
+        // 必须用 toArray 分配连续内存，JNA 才能正确按数组处理结构体。
+        return (NetSDKLib.NET_PTZ_PRESET[]) new NetSDKLib.NET_PTZ_PRESET().toArray(MAX_PRESET_COUNT);
     }
 
     /**
@@ -569,11 +566,10 @@ abstract class AbstractDhDeviceSession {
      * @return 已初始化的录像文件结构数组
      */
     private NetSDKLib.NET_RECORDFILE_INFO[] createRecordFileArray(int maxCount) {
-        NetSDKLib.NET_RECORDFILE_INFO[] recordArray = new NetSDKLib.NET_RECORDFILE_INFO[maxCount];
-        for (int i = 0; i < recordArray.length; i++) {
-            recordArray[i] = new NetSDKLib.NET_RECORDFILE_INFO();
-        }
-        return recordArray;
+        // CLIENT_QueryRecordFile 直接以结构体数组作为入参，元素内存必须连续，
+        // 否则 JNA 会抛 "Structure array elements must use contiguous memory"，
+        // 因此用 toArray 一次性分配整块连续内存。
+        return (NetSDKLib.NET_RECORDFILE_INFO[]) new NetSDKLib.NET_RECORDFILE_INFO().toArray(maxCount);
     }
 
     /** 将 SDK 语音编码结构转换为接口返回对象。 */

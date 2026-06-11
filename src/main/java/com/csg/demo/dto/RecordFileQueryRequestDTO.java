@@ -30,4 +30,11 @@ public class RecordFileQueryRequestDTO {
 
     /** 最大返回条数，默认 100，最大 200。 */
     private int maxCount;
+
+    public int getChannelId() {
+        if (channelId > 0) {
+            return channelId - 1;
+        }
+        return channelId;
+    }
 }

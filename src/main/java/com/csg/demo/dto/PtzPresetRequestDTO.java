@@ -24,4 +24,11 @@ public class PtzPresetRequestDTO {
 
     /** 预置点编号；查询列表时不使用，切换预置点时必填且大于 0。 */
     private int presetIndex;
+
+    public int getChannelId() {
+        if (channelId > 0) {
+            return channelId - 1;
+        }
+        return channelId;
+    }
 }

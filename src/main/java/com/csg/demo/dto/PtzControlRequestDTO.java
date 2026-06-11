@@ -38,4 +38,11 @@ public class PtzControlRequestDTO {
     public int getParam3() {
         return 0;
     }
+
+    public int getChannelId() {
+        if (channelId > 0) {
+            return channelId - 1;
+        }
+        return channelId;
+    }
 }

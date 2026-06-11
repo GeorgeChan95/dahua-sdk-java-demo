@@ -21,4 +21,11 @@ public class CapturePictureRequestDTO {
 
     /** 通道号，从 0 开始。 */
     private int channelId;
+
+    public int getChannelId() {
+        if (channelId > 0) {
+            return channelId - 1;
+        }
+        return channelId;
+    }
 }
